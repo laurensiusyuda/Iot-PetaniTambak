@@ -28,6 +28,30 @@ float suhu_dingin;
 float suhu_normal;
 float suhu_panas;
 
+float airBersihMax;
+float airBersihMin;
+
+float airCukupMax;
+float airCukupMin;
+
+float airBurukMax;
+float airBurukMin;
+
+float maxAirBuruk;
+float maxAirCukup;
+float maxAirBersih;
+float minAirBuruk;
+float minAirCukup;
+float minAirBersih;
+
+// defuzifikasi 
+float z1;
+float z2;
+float z1temp;
+float z2temp;
+float m1,m2,m3;
+float a1,a2,a3;
+
 
 void setup() {
   // Start the Serial Monitor
@@ -110,7 +134,7 @@ unsigned char salinitasNetral(){
   if (baca_salinitas() >= 20 && baca_salinitas() <= 25)
   {
     salinitas_netral = (baca_salinitas()-20)/(25-20);
-  }else if (baca_salinitas() >= 20 && baca_salinitas() <= 25)
+  }else if (baca_salinitas() >= 25 && baca_salinitas() <= 28)
   {
     salinitas_netral = 1;
   }else if (baca_salinitas() >= 28 && baca_salinitas() <= 30)
@@ -121,12 +145,16 @@ unsigned char salinitasNetral(){
 }
 
 unsigned char salinitasAsin(){
-  if (baca_salinitas() >= 28 && baca_salinitas() <= 25)
+  if (baca_salinitas() < 25)
+  {
+    salinitas_asin = 0;
+  }
+  else if (baca_salinitas() >= 28 && baca_salinitas() <= 25)
   {
     salinitas_asin = (baca_salinitas()-28)/(30-28);
   }else if (baca_salinitas( )> 30 )
   {
-    salinitas_asin = 0;
+    salinitas_asin = 1;
   }
   return salinitas_asin;
 }
@@ -176,20 +204,149 @@ void rule(){
   Rule[8] = minr[8]; //cukup
 }
 
-void get_max(){
+// infersi 
+float get_max(){
   rule();
   float air_buruk[2]  = {Rule[2],Rule[7]};
   float air_cukup[6]  = {Rule[0],Rule[1],Rule[3],Rule[5],Rule[6],Rule[8]};
   float air_bersih[1] = {Rule[2]};
-  float maxAirBuruk = air_buruk[2];
+  maxAirBuruk   = air_buruk[0];
+  maxAirCukup   = air_cukup[0];
+  maxAirBersih  = Rule[2];
+  for (int i = 0; i < 2; i++)
+  {
+    if (air_buruk[0] > maxAirBuruk)
+    {
+      maxAirBuruk = air_bersih[1];
+    }
+  }
+  for (int i = 0; i < 6; i++)
+  {
+      maxAirCukup = air_cukup[1];
+  }
+  return maxAirBersih,maxAirBuruk,maxAirCukup;
+}
 
+// hitung batas area output
+float get_area(){
+  get_max();
+  if (maxAirBuruk == 1)
+  {
+    z1 = maxAirBuruk * (19.5 - 18.5) + 18.5;
+    z2 = 0;
+  }else if(maxAirCukup == 1){
+    z1 = maxAirCukup * (19.5 - 18.5) + 18.5;
+    z2 = maxAirCukup * (37.5 - 36.5) + 36.5;
+  }else if (maxAirBersih == 1){
+    z1 = maxAirBersih * (37.5 - 36.5) + 36.5;
+    z2 = 0;
+  }else if(maxAirBuruk > 0 && maxAirCukup > 0 || maxAirBuruk > 0){
+    z1temp = maxAirBuruk * (18.5 - 0) + 0;
+    z2temp = maxAirCukup * (19.5 - 18.5) + 18.5;
+    z1 = min(z1temp,z2temp);
+    z2 = max(z2temp,z1temp);
+  }else if(maxAirCukup > 0 && maxAirBersih > 0 || maxAirCukup > 0){
+    z1temp = maxAirCukup *  (37.5 - 18.5) + 18.5;
+    z2temp = maxAirBersih * (37.5 - 36.5) + 36.5;
+    z1 = min(z1temp,z2temp);
+    z2 = max(z2temp,z1temp);
+    }
+  return z1,z2;
+}
+
+float luas(){
+  if (maxAirBuruk == 1 ){
+    a1 = 0;
+    a2 = 0;
+    a3 = 0;
+  }else if (maxAirCukup == 1)
+  {
+    a1 = z1 * maxAirCukup / 2;
+    a2 = 0;
+    a3 = 0;
+  }else if (maxAirBersih ==1)
+  {
+    a1 = z1 * maxAirBersih / 2;
+    a2 = 0;
+    a3 = 0;
+  }else if (maxAirBuruk > 0 && maxAirCukup > 0 || maxAirBuruk > 0)
+  {
+    float max_air1 = min(maxAirBuruk,maxAirCukup);
+    float max_air2 = max(maxAirBuruk,maxAirCukup);
+    a1 = (z1 - 18.5) * max_air1;
+    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
+    a3 = (18.5 - z2 ) * max_air2;
+  }else if (maxAirCukup > 0 && maxAirBersih > 0 || maxAirCukup > 0)
+  {
+    float max_air1 = min(maxAirCukup,maxAirBersih);
+    float max_air2 = max(maxAirCukup,maxAirBersih);
+    a1 = (z1 - 36.5) * max_air1;
+    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
+    a3 = (37.5 - z2 ) * max_air2;
+  }else if (maxAirBersih > 0)
+  {
+    float max_air1 = min(maxAirCukup,maxAirBersih);
+    float max_air2 = max(maxAirCukup,maxAirBersih);
+    a1 = (z1 - 36.5) * max_air1;
+    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
+    a3 = (37.5 - z2 ) * max_air2;
+  }
+  return a1,a2,a3;
+}
+
+float momentum(){
+  if (maxAirBuruk == 1 ){
+    m1 = 0;
+    m2 = 0;
+    m3 = 0;
+  }else if (maxAirCukup == 1)
+  {
+    m1 = pow(19.5,2)/2;
+    m2 = 0;
+    m3 = 0;
+  }else if (maxAirBersih ==1)
+  {
+    m1 = pow(37.5,2)/2 - pow(36.5,2)/2;
+    m2 = 0;
+    m3 = 0;
+  }else if (maxAirBuruk > 0 && maxAirCukup > 0 || maxAirBuruk > 0)
+  {
+    float max_air1 = min(maxAirBuruk,maxAirCukup);
+    float max_air2 = max(maxAirBuruk,maxAirCukup);
+    m1 = max_air1 * (0.5 * pow(z1,2) - 0.5 * pow(18.5,2));
+    float m2_a = pow(z2,3)
+    float m2_b = 
+    m2 = ((max_air1 + max_air2) * (z2 - z1))/2;
+    m3 = (18.5 - z2 ) * max_air2;
+  }else if (maxAirCukup > 0 && maxAirBersih > 0 || maxAirCukup > 0)
+  {
+    float max_air1 = min(maxAirCukup,maxAirBersih);
+    float max_air2 = max(maxAirCukup,maxAirBersih);
+    a1 = (z1 - 36.5) * max_air1;
+    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
+    a3 = (37.5 - z2 ) * max_air2;
+  }else if (maxAirBersih > 0)
+  {
+    float max_air1 = min(maxAirCukup,maxAirBersih);
+    float max_air2 = max(maxAirCukup,maxAirBersih);
+    a1 = (z1 - 36.5) * max_air1;
+    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
+    a3 = (37.5 - z2 ) * max_air2;
+  }
+  return a1,a2,a3;
+}
+
+float defuzzy(){
+  get_area();
+  luas();
+  momentum();
+  float defuzzfikasi = (m1+m2+m3)/(a1+a2+a3);
 }
 
 void loop() {
   // data sensor suhu
   data_suhu=baca_sensor_suhu();
   data_salinitas=baca_salinitas();
-
   // tampilkan pada lcd
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -198,7 +355,6 @@ void loop() {
   Serial.println("Temperature is: ");
   Serial.println(data_suhu);
   delay(2000);
-
   lcd.setCursor(0, 0);
   lcd.print("Salt = ");
   lcd.print(data_salinitas);
