@@ -1,6 +1,8 @@
 #include <OneWire.h>
 #include <LiquidCrystal_I2C.h>
 #include <DallasTemperature.h>
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #define ONE_WIRE_BUS 14
 
 const int pinsalinitas = A0;
@@ -8,41 +10,24 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 LiquidCrystal_I2C lcd(0x27,16,2);
 
-float minr[9];
-float Rule[9];
-
+// float fuzifikasi
 float data_suhu;
 float data_awal;
 float data_salinitas;
 float salinitas;
-
 float suhu_rendah; 
 float suhu_sedang; 
 float suhu_tinggi; 
-
 float salinitas_tawar;
 float salinitas_netral;
 float salinitas_asin;
-
 float suhu_dingin;
 float suhu_normal;
 float suhu_panas;
-
-float airBersihMax;
-float airBersihMin;
-
-float airCukupMax;
-float airCukupMin;
-
-float airBurukMax;
-float airBurukMin;
-
-float maxAirBuruk;
-float maxAirCukup;
-float maxAirBersih;
-float minAirBuruk;
-float minAirCukup;
-float minAirBersih;
+float lastSend = 0;
+// float infersi
+float minr[9];
+float Rule[9];
 
 // defuzifikasi 
 float z1;
@@ -52,14 +37,67 @@ float z2temp;
 float m1,m2,m3;
 float a1,a2,a3;
 
+// WiFi dan MQTT Broker
+#define wifi_ssid "LAURENSIUS"
+#define wifi_password "Alfa+Omega"
+#define mqtt_server "test.mosquitto.org"
+WiFiClient espClient;
+PubSubClient client(espClient);
+unsigned long lastSampleTime = 0;
+
 
 void setup() {
-  // Start the Serial Monitor
   Serial.begin(9600);
-  // inisialiasi lcd dan tampilkan pesan pada lcd 
   lcd.init();
   lcd.backlight();
   sensors.begin();
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+}
+
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(wifi_ssid);
+  WiFi.begin(wifi_ssid, wifi_password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+ Serial.print("Message arrived [");
+ Serial.print(topic);
+ Serial.print("] ");
+ for (int i = 0; i < length; i++) {
+ Serial.print((char)payload[i]);
+ }
+ Serial.println();
+ 
+}
+
+void reconnect() {
+ // Loop until we're reconnected
+ while (!client.connected()) {
+ Serial.print("Attempting MQTT connection...");
+ // Attempt to connect
+ if (client.connect("ESP8266Client")) {
+ Serial.println("connected");
+ client.subscribe("esp8266/temphum");
+ } else {
+ Serial.print("failed, rc=");
+ Serial.print(client.state());
+ Serial.println(" try again in 5 seconds");
+ // Wait 5 seconds before retrying
+ delay(5000);
+ }
+ }
 }
 
 // fungsi membaca sensor suhu
@@ -204,145 +242,6 @@ void rule(){
   Rule[8] = minr[8]; //cukup
 }
 
-// infersi 
-float get_max(){
-  rule();
-  float air_buruk[2]  = {Rule[2],Rule[7]};
-  float air_cukup[6]  = {Rule[0],Rule[1],Rule[3],Rule[5],Rule[6],Rule[8]};
-  float air_bersih[1] = {Rule[2]};
-  maxAirBuruk   = air_buruk[0];
-  maxAirCukup   = air_cukup[0];
-  maxAirBersih  = Rule[2];
-  for (int i = 0; i < 2; i++)
-  {
-    if (air_buruk[0] > maxAirBuruk)
-    {
-      maxAirBuruk = air_bersih[1];
-    }
-  }
-  for (int i = 0; i < 6; i++)
-  {
-      maxAirCukup = air_cukup[1];
-  }
-  return maxAirBersih,maxAirBuruk,maxAirCukup;
-}
-
-// hitung batas area output
-float get_area(){
-  get_max();
-  if (maxAirBuruk == 1)
-  {
-    z1 = maxAirBuruk * (19.5 - 18.5) + 18.5;
-    z2 = 0;
-  }else if(maxAirCukup == 1){
-    z1 = maxAirCukup * (19.5 - 18.5) + 18.5;
-    z2 = maxAirCukup * (37.5 - 36.5) + 36.5;
-  }else if (maxAirBersih == 1){
-    z1 = maxAirBersih * (37.5 - 36.5) + 36.5;
-    z2 = 0;
-  }else if(maxAirBuruk > 0 && maxAirCukup > 0 || maxAirBuruk > 0){
-    z1temp = maxAirBuruk * (18.5 - 0) + 0;
-    z2temp = maxAirCukup * (19.5 - 18.5) + 18.5;
-    z1 = min(z1temp,z2temp);
-    z2 = max(z2temp,z1temp);
-  }else if(maxAirCukup > 0 && maxAirBersih > 0 || maxAirCukup > 0){
-    z1temp = maxAirCukup *  (37.5 - 18.5) + 18.5;
-    z2temp = maxAirBersih * (37.5 - 36.5) + 36.5;
-    z1 = min(z1temp,z2temp);
-    z2 = max(z2temp,z1temp);
-    }
-  return z1,z2;
-}
-
-float luas(){
-  if (maxAirBuruk == 1 ){
-    a1 = 0;
-    a2 = 0;
-    a3 = 0;
-  }else if (maxAirCukup == 1)
-  {
-    a1 = z1 * maxAirCukup / 2;
-    a2 = 0;
-    a3 = 0;
-  }else if (maxAirBersih ==1)
-  {
-    a1 = z1 * maxAirBersih / 2;
-    a2 = 0;
-    a3 = 0;
-  }else if (maxAirBuruk > 0 && maxAirCukup > 0 || maxAirBuruk > 0)
-  {
-    float max_air1 = min(maxAirBuruk,maxAirCukup);
-    float max_air2 = max(maxAirBuruk,maxAirCukup);
-    a1 = (z1 - 18.5) * max_air1;
-    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
-    a3 = (18.5 - z2 ) * max_air2;
-  }else if (maxAirCukup > 0 && maxAirBersih > 0 || maxAirCukup > 0)
-  {
-    float max_air1 = min(maxAirCukup,maxAirBersih);
-    float max_air2 = max(maxAirCukup,maxAirBersih);
-    a1 = (z1 - 36.5) * max_air1;
-    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
-    a3 = (37.5 - z2 ) * max_air2;
-  }else if (maxAirBersih > 0)
-  {
-    float max_air1 = min(maxAirCukup,maxAirBersih);
-    float max_air2 = max(maxAirCukup,maxAirBersih);
-    a1 = (z1 - 36.5) * max_air1;
-    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
-    a3 = (37.5 - z2 ) * max_air2;
-  }
-  return a1,a2,a3;
-}
-
-float momentum(){
-  if (maxAirBuruk == 1 ){
-    m1 = 0;
-    m2 = 0;
-    m3 = 0;
-  }else if (maxAirCukup == 1)
-  {
-    m1 = pow(19.5,2)/2;
-    m2 = 0;
-    m3 = 0;
-  }else if (maxAirBersih ==1)
-  {
-    m1 = pow(37.5,2)/2 - pow(36.5,2)/2;
-    m2 = 0;
-    m3 = 0;
-  }else if (maxAirBuruk > 0 && maxAirCukup > 0 || maxAirBuruk > 0)
-  {
-    float max_air1 = min(maxAirBuruk,maxAirCukup);
-    float max_air2 = max(maxAirBuruk,maxAirCukup);
-    m1 = max_air1 * (0.5 * pow(z1,2) - 0.5 * pow(18.5,2));
-    float m2_a = pow(z2,3)
-    float m2_b = 
-    m2 = ((max_air1 + max_air2) * (z2 - z1))/2;
-    m3 = (18.5 - z2 ) * max_air2;
-  }else if (maxAirCukup > 0 && maxAirBersih > 0 || maxAirCukup > 0)
-  {
-    float max_air1 = min(maxAirCukup,maxAirBersih);
-    float max_air2 = max(maxAirCukup,maxAirBersih);
-    a1 = (z1 - 36.5) * max_air1;
-    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
-    a3 = (37.5 - z2 ) * max_air2;
-  }else if (maxAirBersih > 0)
-  {
-    float max_air1 = min(maxAirCukup,maxAirBersih);
-    float max_air2 = max(maxAirCukup,maxAirBersih);
-    a1 = (z1 - 36.5) * max_air1;
-    a2 = ((max_air1 + max_air2) * (z2 - z1))/2;
-    a3 = (37.5 - z2 ) * max_air2;
-  }
-  return a1,a2,a3;
-}
-
-float defuzzy(){
-  get_area();
-  luas();
-  momentum();
-  float defuzzfikasi = (m1+m2+m3)/(a1+a2+a3);
-}
-
 void loop() {
   // data sensor suhu
   data_suhu=baca_sensor_suhu();
@@ -361,4 +260,9 @@ void loop() {
   Serial.println("Salinitas is: ");
   Serial.println(data_salinitas);
   delay(2000);
+
+  if (!client.connected()) {
+    reconnect();
   }
+  client.loop();
+}
