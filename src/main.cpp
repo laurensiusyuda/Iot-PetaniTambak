@@ -17,6 +17,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // float fuzifikasi
 float data_suhu;
+
 float data_awal;
 float data_salinitas;
 float salinitas;
@@ -36,6 +37,7 @@ float ph_basa;
 // float infersi
 float minr[9];
 float Rule[9];
+float buf[9];
 
 // defuzifikasi
 float z1;
@@ -133,7 +135,9 @@ float baca_salinitas()
   digitalWrite(pin_Salinitas, HIGH); // Turn pin_Salinitass On
   digitalWrite(pin_pH, LOW);         // Turn pin_pH Off
   data_awal = analogRead(pinsalinitas);
-  salinitas = (data_awal + 61.62) / 24.96;
+
+  // rumus didapatkan melalui hasil regresi
+  salinitas = (0.00011 * (data_awal * data_awal) - (0.0514 * data_awal) + 5.90946);
   return salinitas;
 }
 
@@ -141,6 +145,22 @@ float baca_pH()
 {
   digitalWrite(pin_pH, HIGH);       // Turn pin_pH On
   digitalWrite(pin_Salinitas, LOW); // Turn pin_Salinitas off
+
+  // rumus didapatkan melalaui hasil regresi
+  for (int i = 0; i < 10; i++)
+  {
+    /* code */
+    buf[i] = analogRead(pin_pH);
+    delay(10);
+  }
+  float avgValue = 0;
+  for (int i = 2; i < 8; i++)
+  {
+    avgValue += buf[i];
+  }
+  float pHValue = (float)avgValue * 5.0 / 1024 / 6;
+  pHValue = 2.21 * pHValue * pHValue + 0.0;
+  return pHValue;
 }
 
 // fuzyfikasi
@@ -307,10 +327,12 @@ void loop()
   lcd.print("Salt = ");
   lcd.print(data_salinitas);
   delay(2000);
+
   if (!client.connected())
   {
     reconnect();
   }
+
   client.loop();
   delay(2000);
   data_suhu = baca_sensor_suhu();
