@@ -55,7 +55,7 @@ float pH;
 #define wifi_password "Alfa+Omega"
 #define mqtt_server "broker.mqtt-dashboard.com"
 #define mqqt_port 1883
-#define humidity_topic "topicName/humidity"
+#define salinity_topic "topicName/salt"
 #define temperature_topic "topicName/temperature"
 
 WiFiClient espClient;
@@ -344,5 +344,5 @@ void loop()
   salt = data_salinitas;
   Serial.print("New humidity:");
   Serial.println(String(salt).c_str());
-  client.publish(humidity_topic, String(salt).c_str(), true);
+  client.publish(salinity_topic, String(salt).c_str(), true);
 }
