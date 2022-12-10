@@ -137,7 +137,7 @@ float baca_salinitas()
   data_awal = analogRead(pinsalinitas);
 
   // rumus didapatkan melalui hasil regresi
-  salinitas = (0.00011 * (data_awal * data_awal) - (0.0514 * data_awal) + 5.90946);
+  salinitas = (data_awal + 61.62) / 24.96;
   return salinitas;
 }
 
